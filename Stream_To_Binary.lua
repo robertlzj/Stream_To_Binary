@@ -15,7 +15,9 @@ local Stream_Binary_Accessor_Meta={
 		File_Handle=nil,
 		Data_Type_List=nil,
 		[-n]..[-1]=Name_n,..Name_1,
-		Previous_Seek_Position_For_Read=1,
+		File_Position=1,
+		Body_Start_Position=1,
+		--	Initial File_Position
 	]]
 	__index={
 		Write_Data_Type=function (self,...)
@@ -28,16 +30,22 @@ local Stream_Binary_Accessor_Meta={
 					table.insert(Data_Type_List_Item_List,Value)
 				elseif math.type(Value)=='float' then
 					table.insert(Data_Type_List_Item_List,'f')
-				else assert(math.type(Value)=='integer')
+				else assert(math.type(Value)=='integer',"type(Value)"..type(Value))
+					--	20250526_4
 					table.insert(Data_Type_List_Item_List,Value_To_Format_String[Value])
 				end
 			end
 			local Data_Type_List=table.concat(Data_Type_List_Item_List)
 			if self.Data_Type_List~=Data_Type_List then
-				assert(not self.Data_Type_List and File_Handle:seek()==0)
-				self.Data_Type_List=Data_Type_List
-				File_Handle:write(Data_Type_List,'\n')
-				self.Previous_Seek_Position_For_Read=File_Handle:seek()
+				if self.Data_Type_List then
+					return false,"Data type conflict"
+				else
+					assert(File_Handle:seek()==0)
+					self.Data_Type_List=Data_Type_List
+					File_Handle:write(Data_Type_List,'\n')
+					self.Body_Start_Position=File_Handle:seek()
+					self.File_Position=self.Body_Start_Position
+				end
 			end
 			return self
 		end,
@@ -57,14 +65,15 @@ local Stream_Binary_Accessor_Meta={
 					self[-Count+Index-1]=Name
 				end
 			end
-			self.Previous_Seek_Position_For_Read=File_Handle:seek()
+			self.Body_Start_Position=File_Handle:seek()
+			self.File_Position=self.Body_Start_Position
 			return self
 		end,
 		Append_Data=function(self,...)
 			local File_Handle=assert(self.File_Handle)
 			local Data_Type_List=assert(self.Data_Type_List)
 			File_Handle:seek('end')
-			File_Handle:write(string.pack(Data_Type_List,...))
+			File_Handle:write((assert(string.pack(Data_Type_List,...),"Expect data type: "..Data_Type_List)))
 			return self
 		end,
 		Read_Name=function(self)
@@ -73,18 +82,34 @@ local Stream_Binary_Accessor_Meta={
 				return table.unpack(self,-#self.Data_Type_List,-1)
 			end
 		end,
-		Iter_Data=function(self,Data_Number)
+		Iter_Data=function(self,Start_File_Position,Direction)
 			local File_Handle=assert(self.File_Handle)
 			local Data_Type_List=assert(self.Data_Type_List)
-			local Byte_Counts=string.packsize(Data_Type_List)
+			local Unit=string.packsize(Data_Type_List)
+			--	in bytes
+			self.File_Position=Start_File_Position or self.File_Position
+			local Direction_Factor=Direction and string.find(string.upper(Direction),'BEGIN') and -1 or 1
+			if self.File_Position==File_Handle:seek('end') and Direction_Factor==-1 then
+				self.File_Position=self.File_Position-Unit
+			end
 			return function()
-				File_Handle:seek('set',self.Previous_Seek_Position_For_Read)
-				local Bytes_String=File_Handle:read(Byte_Counts)
+				local Start_File_Position=self.File_Position
+				if Start_File_Position<self.Body_Start_Position then
+					self.File_Position=self.Body_Start_Position
+					return
+				end
+				File_Handle:seek('set',Start_File_Position)
+				local Bytes_String=File_Handle:read(Unit)
 				if Bytes_String then
-					assert(#Bytes_String==Byte_Counts)
-					self.Previous_Seek_Position_For_Read=self.Previous_Seek_Position_For_Read+Byte_Counts
-					return string.unpack(Data_Type_List,Bytes_String)
-					--	at end there will be an additional value- "the index of the first unread byte"
+					;	assert(#Bytes_String==Unit)
+					;	assert(File_Handle:seek()==Start_File_Position+Unit)
+					self.File_Position=Start_File_Position+Unit*Direction_Factor
+					local Data_Position_List={
+						string.unpack(Data_Type_List,Bytes_String),
+						--	at end there will be an additional value- "the index of the first unread byte"
+					}
+					Data_Position_List[#Data_Position_List]=Start_File_Position
+					return table.unpack(Data_Position_List)
 				end
 			end
 		end,
@@ -114,7 +139,8 @@ local function Stream_To_Binary(File_Handle)
 			local Name=File_Handle:read'l'
 			Stream_Binary_Accessor[Index]=Name
 		end
-		Stream_Binary_Accessor.Previous_Seek_Position_For_Read=File_Handle:seek()
+		Stream_Binary_Accessor.Body_Start_Position=File_Handle:seek()
+		Stream_Binary_Accessor.File_Position=Stream_Binary_Accessor.Body_Start_Position
 	end
 	return Stream_Binary_Accessor
 end
