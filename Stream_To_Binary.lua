@@ -87,8 +87,11 @@ local Stream_Binary_Accessor_Meta={
 			local Data_Type_List=assert(self.Data_Type_List)
 			local Unit=string.packsize(Data_Type_List)
 			--	in bytes
-			self.File_Position=Start_File_Position or self.File_Position
 			local Direction_Factor=Direction and string.find(string.upper(Direction),'BEGIN') and -1 or 1
+			self.File_Position=Start_File_Position or (
+				Direction_Factor==1 and self.Body_Start_Position
+				or File_Handle:seek('end')
+			)
 			if self.File_Position==File_Handle:seek('end') and Direction_Factor==-1 then
 				self.File_Position=self.File_Position-Unit
 			end
