@@ -113,6 +113,11 @@ local Stream_Binary_Accessor_Meta={
 				end
 			end
 		end,
+		Get_Tail_Position=function(self)
+			local Data_Type_List=assert(self.Data_Type_List)
+			local Unit=string.packsize(Data_Type_List)
+			return math.max(self.File_Handle:seek('end',-Unit),self.Body_Start_Position)
+		end,
 		Close=function(self)
 			local File_Handle=assert(self.File_Handle)
 			File_Handle:close()
