@@ -14,6 +14,13 @@ local function Display_Stream_Binary_Data(File_Path)
 	until #Values==0
 end
 
+local Quick_Test_File_Path
+--=[[K:\Users\rober\OneDrive\WorkingDirectory\PLC-Lua\Source+DevEnv\Record\DB2.luab]]
+if Quick_Test_File_Path then
+	Display_Stream_Binary_Data(Quick_Test_File_Path)
+	return
+end
+
 local Default_File='Stream_Binary_Data.luab'
 
 do
@@ -25,15 +32,17 @@ do
 	:Append_Data(255,-0x7fff,1.2)
 	:Append_Data(0,0x7fff,0.12)
 	:Close()
-	local File_Handle_For_Read=io.open(Default_File,'r'..Binary_Open)
-	local Access_Binary=Stream_To_Binary(File_Handle_For_Read)
-	local Name_List={Access_Binary:Read_Name()}
+	local File_Handle=io.open(Default_File,'r+'..Binary_Open)
+	local Stream_Binary_Accessor=Stream_To_Binary(File_Handle)
+	local Name_List={Stream_Binary_Accessor:Read_Name()}
 	assert(Name_List[1]=='A' and Name_List[2]=='B' and Name_List[3]=='C')
 	local Value_List={}
-	for a,b,c in Access_Binary:Iter_Data() do
+	local File_Position_List={}
+	for a,b,c,File_Position in Stream_Binary_Accessor:Iter_Data(--[[default 'Towards End']]) do
 		table.insert(Value_List,a)
 		table.insert(Value_List,b)
 		table.insert(Value_List,c)
+		table.insert(File_Position_List,File_Position)
 	end
 	assert(Value_List[1]==255
 		and Value_List[2]==-0x7fff
@@ -42,7 +51,45 @@ do
 		and Value_List[5]==0x7fff
 		and math.abs(Value_List[6]-0.12)<0.00001
 	)
+	assert(File_Position_List[1]==10 and File_Position_List[2]==20)
 	Display_Stream_Binary_Data(Default_File)
+	----
+	local Previous_File_Position=File_Position_List[2]
+	----
+	local Value_List={}
+	local File_Position_List={}
+	for a,b,c,File_Position in Stream_Binary_Accessor:Iter_Data(nil,'Towards Begin') do
+		table.insert(Value_List,a)
+		table.insert(Value_List,b)
+		table.insert(Value_List,c)
+		table.insert(File_Position_List,File_Position)
+	end
+	assert(Value_List[4]==255
+		and Value_List[5]==-0x7fff
+		and math.abs(Value_List[6]-1.2)<0.001
+		and Value_List[1]==0
+		and Value_List[2]==0x7fff
+		and math.abs(Value_List[3]-0.12)<0.00001
+	)
+	----
+	Stream_Binary_Accessor:Append_Data(1,2,3)--appen new
+	----
+	local Value_List={}
+	local File_Position_List={}
+	for a,b,c,File_Position in Stream_Binary_Accessor:Iter_Data(Previous_File_Position,'Towards Begin') do
+		table.insert(Value_List,a)
+		table.insert(Value_List,b)
+		table.insert(Value_List,c)
+		table.insert(File_Position_List,File_Position)
+	end
+	assert(Value_List[4]==255
+		and Value_List[5]==-0x7fff
+		and math.abs(Value_List[6]-1.2)<0.001
+		and Value_List[1]==0
+		and Value_List[2]==0x7fff
+		and math.abs(Value_List[3]-0.12)<0.00001
+	)
+	assert(File_Position_List[2]==10 and File_Position_List[1]==20)
 end
 
 do
